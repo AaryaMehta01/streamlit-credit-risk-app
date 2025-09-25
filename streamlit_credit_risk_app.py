@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import joblib
 import plotly.express as px
+from io import StringIO
 
 # --- File Paths ---
 MODEL_PATH = 'model_credit_risk.pkl'
@@ -35,6 +36,42 @@ def load_data():
 
 df_clean = load_data()
 
+# --- Preprocessing Function for Predictions ---
+def preprocess_data(df):
+    """
+    Preprocesses a DataFrame for the credit risk prediction model.
+    Handles one-hot encoding and scaling.
+    """
+    # Define a list of all columns the model expects
+    all_cols = ['person_age', 'person_income', 'person_emp_length', 'loan_amnt', 'loan_int_rate',
+                'loan_percent_income', 'cb_person_cred_hist_length',
+                'person_home_ownership_MORTGAGE', 'person_home_ownership_OTHER',
+                'person_home_ownership_OWN', 'person_home_ownership_RENT',
+                'loan_intent_DEBTCONSOLIDATION', 'loan_intent_EDUCATION',
+                'loan_intent_HOMEIMPROVEMENT', 'loan_intent_MEDICAL',
+                'loan_intent_PERSONAL', 'loan_intent_VENTURE', 'loan_grade_A',
+                'loan_grade_B', 'loan_grade_C', 'loan_grade_D', 'loan_grade_E',
+                'loan_grade_F', 'loan_grade_G', 'cb_person_default_on_file_N',
+                'cb_person_default_on_file_Y']
+    
+    # One-hot encode categorical features
+    categorical_cols = ['person_home_ownership', 'loan_intent', 'loan_grade', 'cb_person_default_on_file']
+    encoded_df = pd.get_dummies(df, columns=categorical_cols, drop_first=False)
+
+    # Align columns to ensure the same structure as training data
+    for col in all_cols:
+        if col not in encoded_df.columns:
+            encoded_df[col] = 0
+
+    # Scale numerical features
+    numerical_cols = ['person_age', 'person_income', 'person_emp_length', 'loan_amnt', 'loan_int_rate', 'loan_percent_income', 'cb_person_cred_hist_length']
+    encoded_df[numerical_cols] = scaler.transform(encoded_df[numerical_cols])
+
+    # Reorder columns to match the training data
+    encoded_df = encoded_df[all_cols]
+    
+    return encoded_df
+
 # --- Page Configuration ---
 st.set_page_config(
     page_title="Credit Risk Predictor",
@@ -45,7 +82,7 @@ st.set_page_config(
 
 # --- Sidebar Navigation ---
 st.sidebar.header("Navigation")
-page = st.sidebar.radio("Go to", ["Home", "Predict Credit Risk", "Data Insights"])
+page = st.sidebar.radio("Go to", ["Home", "Predict Credit Risk", "Batch Prediction", "Data Insights"])
 
 # --- Home Page ---
 if page == "Home":
@@ -56,13 +93,14 @@ if page == "Home":
         Using a machine learning model, this app provides insights into the factors influencing credit risk. You can:
         
         1. **Predict Credit Risk**: Input a potential borrower's details to get a real-time risk assessment.
-        2. **Explore Data Insights**: Visualize and analyze the underlying loan data to understand trends and correlations.
+        2. **Batch Prediction**: Upload a CSV file to get predictions for multiple borrowers at once.
+        3. **Explore Data Insights**: Visualize and analyze the underlying loan data to understand trends and correlations.
         
         This application is designed to be a helpful starting point for understanding and leveraging data science in financial services.
     """)
     st.image("https://placehold.co/800x400/0175B5/FFFFFF?text=Credit+Risk+Prediction")
 
-# --- Prediction Page ---
+# --- Single Prediction Page ---
 elif page == "Predict Credit Risk":
     if model and scaler:
         st.title("Predict Credit Risk")
@@ -90,51 +128,25 @@ elif page == "Predict Credit Risk":
             submitted = st.form_submit_button("Predict")
 
         if submitted:
-            # --- Data Preprocessing ---
-            input_df = pd.DataFrame({
-                'person_age': [person_age],
-                'person_income': [person_income],
-                'person_home_ownership': [person_home_ownership],
-                'person_emp_length': [person_emp_length],
-                'loan_intent': [loan_intent],
-                'loan_grade': [loan_grade],
-                'loan_amnt': [loan_amnt],
-                'loan_int_rate': [loan_int_rate],
-                'loan_percent_income': [loan_percent_income],
-                'cb_person_default_on_file': ["Y" if cb_person_default_on_file == "Yes" else "N"],
-                'cb_person_cred_hist_length': [cb_person_cred_hist_length]
-            })
+            # Create a DataFrame from the input data
+            input_df = pd.DataFrame([{
+                'person_age': person_age,
+                'person_income': person_income,
+                'person_home_ownership': person_home_ownership,
+                'person_emp_length': person_emp_length,
+                'loan_intent': loan_intent,
+                'loan_grade': loan_grade,
+                'loan_amnt': loan_amnt,
+                'loan_int_rate': loan_int_rate,
+                'loan_percent_income': loan_percent_income,
+                'cb_person_default_on_file': "Y" if cb_person_default_on_file == "Yes" else "N",
+                'cb_person_cred_hist_length': cb_person_cred_hist_length
+            }])
 
-            # One-hot encode categorical features
-            categorical_cols = ['person_home_ownership', 'loan_intent', 'loan_grade', 'cb_person_default_on_file']
-            encoded_df = pd.get_dummies(input_df, columns=categorical_cols, drop_first=False)
-
-            # Ensure all one-hot encoded columns are present, even if not in this single input row
-            all_cols = ['person_age', 'person_income', 'person_emp_length', 'loan_amnt', 'loan_int_rate',
-                        'loan_percent_income', 'cb_person_cred_hist_length',
-                        'person_home_ownership_MORTGAGE', 'person_home_ownership_OTHER',
-                        'person_home_ownership_OWN', 'person_home_ownership_RENT',
-                        'loan_intent_DEBTCONSOLIDATION', 'loan_intent_EDUCATION',
-                        'loan_intent_HOMEIMPROVEMENT', 'loan_intent_MEDICAL',
-                        'loan_intent_PERSONAL', 'loan_intent_VENTURE', 'loan_grade_A',
-                        'loan_grade_B', 'loan_grade_C', 'loan_grade_D', 'loan_grade_E',
-                        'loan_grade_F', 'loan_grade_G', 'cb_person_default_on_file_N',
-                        'cb_person_default_on_file_Y']
-            
-            for col in all_cols:
-                if col not in encoded_df.columns:
-                    encoded_df[col] = 0
-
-            # Scale numerical features
-            numerical_cols = ['person_age', 'person_income', 'person_emp_length', 'loan_amnt', 'loan_int_rate', 'loan_percent_income', 'cb_person_cred_hist_length']
-            encoded_df[numerical_cols] = scaler.transform(encoded_df[numerical_cols])
-
-            # Reorder columns to match the training data
-            encoded_df = encoded_df[all_cols]
-
-            # --- Prediction ---
-            prediction = model.predict(encoded_df)
-            prediction_proba = model.predict_proba(encoded_df)
+            # Preprocess the data and make predictions
+            preprocessed_df = preprocess_data(input_df)
+            prediction = model.predict(preprocessed_df)
+            prediction_proba = model.predict_proba(preprocessed_df)
 
             st.subheader("Prediction Result")
             if prediction[0] == 0:
@@ -144,6 +156,47 @@ elif page == "Predict Credit Risk":
 
             st.info(f"Probability of No Default (Class 0): **{prediction_proba[0][0]:.2f}**")
             st.warning(f"Probability of Default (Class 1): **{prediction_proba[0][1]:.2f}**")
+
+# --- Batch Prediction Page ---
+elif page == "Batch Prediction":
+    st.title("Batch Credit Risk Prediction")
+    st.markdown("Upload a CSV file to get risk predictions for multiple borrowers. The file must contain the following columns:")
+    st.code("person_age, person_income, person_home_ownership, person_emp_length, loan_intent, loan_grade, loan_amnt, loan_int_rate, loan_percent_income, cb_person_default_on_file, cb_person_cred_hist_length")
+    
+    uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
+    
+    if uploaded_file is not None:
+        try:
+            uploaded_df = pd.read_csv(uploaded_file)
+            st.write("Original Data:")
+            st.dataframe(uploaded_df.head())
+            
+            # Preprocess the uploaded data
+            preprocessed_df = preprocess_data(uploaded_df.copy())
+            
+            # Make predictions
+            predictions = model.predict(preprocessed_df)
+            probabilities = model.predict_proba(preprocessed_df)
+            
+            # Add results to the original DataFrame
+            uploaded_df['prediction_status'] = np.where(predictions == 0, 'Low Risk', 'High Risk')
+            uploaded_df['probability_of_default'] = probabilities[:, 1]
+            
+            st.success("Predictions completed!")
+            st.write("Prediction Results:")
+            st.dataframe(uploaded_df)
+
+            # Create a download button for the results
+            csv_output = uploaded_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="Download Results as CSV",
+                data=csv_output,
+                file_name='credit_risk_predictions.csv',
+                mime='text/csv'
+            )
+            
+        except Exception as e:
+            st.error(f"An error occurred while processing the file: {e}")
 
 # --- Data Insights Page ---
 elif page == "Data Insights":
