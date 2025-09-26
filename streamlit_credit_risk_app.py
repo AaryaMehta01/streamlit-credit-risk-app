@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+from sklearn.metrics import confusion_matrix
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -146,6 +147,69 @@ def render_enterprise_dashboard(df, page_title):
                              title=f"Loan Amount Distribution by {segment_by_2}",
                              color=segment_by_2)
             st.plotly_chart(fig_seg, use_container_width=True)
+
+    # ---------------- Model Performance & Insights ----------------
+    st.markdown("---")
+    st.header("Model Performance & Insights")
+
+    # Confusion Matrix
+    if not df.empty:
+        try:
+            st.subheader("Confusion Matrix")
+            # Calculate Confusion Matrix
+            y_true = df['true_label']
+            y_pred = df['prediction']
+            
+            cm = confusion_matrix(y_true, y_pred)
+            cm_df = pd.DataFrame(cm, index=['Actual 0', 'Actual 1'], columns=['Predicted 0', 'Predicted 1'])
+            
+            fig_cm = go.Figure(data=go.Heatmap(
+                z=cm,
+                x=['Predicted Rejected', 'Predicted Accepted'],
+                y=['Actual Good Loan (0)', 'Actual Bad Loan (1)'],
+                colorscale='Viridis',
+                hovertemplate='Predicted: %{x}<br>Actual: %{y}<br>Count: %{z}<extra></extra>'
+            ))
+            
+            fig_cm.update_layout(
+                title='Confusion Matrix',
+                xaxis_title='Predicted',
+                yaxis_title='Actual',
+                xaxis={'side': 'bottom'},
+                yaxis={'side': 'left'}
+            )
+            
+            # Add annotations for counts
+            for i in range(len(cm)):
+                for j in range(len(cm[0])):
+                    fig_cm.add_annotation(
+                        x=fig_cm.data[0].x[j],
+                        y=fig_cm.data[0].y[i],
+                        text=str(cm[i][j]),
+                        showarrow=False,
+                        font=dict(color="white", size=16)
+                    )
+            
+            st.plotly_chart(fig_cm, use_container_width=True)
+
+            # Performance Metrics
+            tn, fp, fn, tp = cm.ravel()
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+            recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+            accuracy = (tp + tn) / (tp + tn + fp + fn) if (tp + tn + fp + fn) > 0 else 0
+            
+            col_metrics1, col_metrics2, col_metrics3 = st.columns(3)
+            col_metrics1.metric("Precision (Correct Positives)", f"{precision:.2f}")
+            col_metrics2.metric("Recall (True Positive Rate)", f"{recall:.2f}")
+            col_metrics3.metric("Accuracy", f"{accuracy:.2f}")
+
+        except ValueError:
+            st.warning("Cannot generate a confusion matrix. The 'loan_status' column might contain values other than 0 or 1.")
+        
+    st.markdown("### Your Insights")
+    st.write("Use this space to document your key insights from the dashboard and analysis.")
+    st.text_area("Write your notes here...", height=200, key="insights_text_area")
+
 
 # --- Sidebar Navigation ---
 st.sidebar.header("Navigation")
