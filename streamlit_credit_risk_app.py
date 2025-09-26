@@ -31,7 +31,7 @@ def render_dashboard(df, page_title):
         threshold = st.slider("Probability Threshold (accept if PD ≤ threshold)", min_value=0.0, max_value=1.0, value=0.5, step=0.01)
         lgd = st.slider("Loss Given Default (LGD)", 0.0, 1.0, 1.0, 0.05)
         ead_multiplier = st.number_input("EAD Multiplier (scale loan amounts)", value=1.0, step=0.1)
-
+        
     # Apply controls to the dataframe
     df["loan_amnt"] = df["loan_amnt"] * ead_multiplier
     df["expected_loss"] = df["prob_default"] * lgd * df["loan_amnt"]
@@ -65,10 +65,37 @@ def render_dashboard(df, page_title):
         fig1.update_layout(xaxis_title="Probability of Default", yaxis_title="Frequency")
         st.plotly_chart(fig1, use_container_width=True)
     with col_chart2:
-        loss_by_bucket = df.groupby(df['accept'].map({1: 'Accepted', 0: 'Rejected'}))['expected_loss'].sum().reset_index()
-        fig2 = px.bar(loss_by_bucket, x='index', y='expected_loss', title='Expected Loss by Acceptance Status')
+        # Corrected code to explicitly create a column for the x-axis
+        df['acceptance_status'] = df['accept'].map({1: 'Accepted', 0: 'Rejected'})
+        loss_by_bucket = df.groupby('acceptance_status')['expected_loss'].sum().reset_index()
+        fig2 = px.bar(loss_by_bucket, x='acceptance_status', y='expected_loss', title='Expected Loss by Acceptance Status')
         fig2.update_layout(xaxis_title="Acceptance Status", yaxis_title="Total Expected Loss ($)")
         st.plotly_chart(fig2, use_container_width=True)
+
+    # --- New Visualizations ---
+    st.markdown("---")
+    st.markdown("### 📊 Additional Visualizations")
+    col_new_charts1, col_new_charts2 = st.columns(2)
+    with col_new_charts1:
+        # Histogram for loan amount distribution
+        fig_loan_amount = px.histogram(df, x="loan_amnt", nbins=50, title="Distribution of Loan Amounts")
+        fig_loan_amount.update_layout(xaxis_title="Loan Amount ($)", yaxis_title="Frequency")
+        st.plotly_chart(fig_loan_amount, use_container_width=True)
+        
+    with col_new_charts2:
+        # Pie chart for categorical distribution, dynamically selected
+        categorical_cols = [col for col in df.columns if df[col].dtype == 'object' and col not in ['acceptance_status']]
+        if categorical_cols:
+            selected_cat = st.selectbox("Select a category for the pie chart:", categorical_cols)
+            fig_pie = px.pie(
+                df,
+                names=selected_cat,
+                title=f"Distribution of Loans by {selected_cat}",
+                hole=0.3
+            )
+            st.plotly_chart(fig_pie, use_container_width=True)
+        else:
+            st.info("No categorical columns found in the dataset for a pie chart.")
 
     st.markdown("---")
 
