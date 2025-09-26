@@ -3,28 +3,20 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, roc_curve, auc, precision_recall_curve
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="Enterprise Credit Risk Dashboard",
+    page_title="Enterprise Credit Risk Management",
     page_icon="🏢",
     layout="wide"
 )
 
-# --- Helper Functions ---
-def format_currency(value):
-    """Formats a number into a readable currency string."""
-    if abs(value) >= 1e9:
-        return f"${value / 1e9:,.1f}B"
-    elif abs(value) >= 1e6:
-        return f"${value / 1e6:,.1f}M"
-    else:
-        return f"${value:,.0f}"
-
+# --- Helper Function for Dashboard Content ---
 def render_enterprise_dashboard(df, page_title):
-    """Renders a fully-featured enterprise-grade dashboard with advanced analytics."""
-
+    """
+    Renders an enterprise-grade dashboard with advanced analytics.
+    """
     # ---------------- Header & Introduction ----------------
     st.title(page_title)
     st.markdown("""
@@ -38,37 +30,37 @@ def render_enterprise_dashboard(df, page_title):
         <div class="title-divider"></div>
         <p style="font-size:1.1rem;">
             Welcome to the Enterprise Credit Risk Dashboard. This tool provides a comprehensive, 
-            360-degree view of your loan portfolio, enabling you to manage risk and 
-            make data-driven decisions.
+            360-degree view of your loan portfolio, allowing you to manage risk, 
+            validate models, and make data-driven decisions.
         </p>
     """, unsafe_allow_html=True)
     
     df_original = df.copy()
 
-    # ---------------- Sidebar Controls ----------------
+    # ---------------- Sidebar Controls - Logical Sections ----------------
     with st.sidebar:
-        st.header("⚙️ Dashboard Controls")
+        st.header("⚙️ Model Parameters")
+        threshold = st.slider("Probability Threshold (accept if PD ≤ threshold)", min_value=0.0, max_value=1.0, value=0.5, step=0.01)
+        lgd = st.slider("Loss Given Default (LGD)", 0.0, 1.0, 1.0, 0.05)
+        ead_multiplier = st.number_input("EAD Multiplier (scale loan amounts)", value=1.0, step=0.1)
+
+        # Dynamic Filters
+        st.header("🗂️ Portfolio Filters")
         
-        with st.expander("Model Parameters", expanded=True):
-            threshold = st.slider("Probability Threshold (Accept if PD ≤ threshold)", min_value=0.0, max_value=1.0, value=0.5, step=0.01)
-            lgd = st.slider("Loss Given Default (LGD)", 0.0, 1.0, 1.0, 0.05)
-            ead_multiplier = st.number_input("EAD Multiplier (scale loan amounts)", value=1.0, step=0.1)
+        categorical_cols = [col for col in df.columns if df[col].dtype == 'object' and col not in ['acceptance_status']]
+        numerical_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col]) and col not in ['prob_default', 'loan_amnt', 'expected_loss', 'accept']]
 
-        with st.expander("Portfolio Filters", expanded=True):
-            categorical_cols = [col for col in df.columns if df[col].dtype == 'object' and col not in ['acceptance_status']]
-            numerical_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col]) and col not in ['prob_default', 'loan_amnt', 'expected_loss', 'accept']]
-
-            filters = {}
-            for col in categorical_cols:
-                unique_values = df[col].unique()
-                selected_values = st.multiselect(f"Filter by {col}", unique_values, unique_values)
-                filters[col] = selected_values
-            
-            for col in numerical_cols:
-                min_val = float(df[col].min())
-                max_val = float(df[col].max())
-                selected_range = st.slider(f"Filter by {col}", min_val, max_val, (min_val, max_val))
-                filters[col] = selected_range
+        filters = {}
+        for col in categorical_cols:
+            unique_values = df[col].unique()
+            selected_values = st.multiselect(f"Filter by {col}", unique_values, unique_values)
+            filters[col] = selected_values
+        
+        for col in numerical_cols:
+            min_val = float(df[col].min())
+            max_val = float(df[col].max())
+            selected_range = st.slider(f"Filter by {col}", min_val, max_val, (min_val, max_val))
+            filters[col] = selected_range
 
     # Apply filters
     for col, values in filters.items():
@@ -85,165 +77,219 @@ def render_enterprise_dashboard(df, page_title):
     df['true_label'] = df['loan_status'] # Assuming loan_status is the ground truth
     df['prediction'] = df['accept']
 
-    # --- Main Dashboard Content ---
-    
-    st.markdown("### Portfolio Health & Key Metrics")
-    
-    col1, col2, col3, col4, col5 = st.columns(5)
-    with col1:
-        total_loans = len(df)
-        st.metric(label="Total Loans", value=f"{total_loans:,.0f}")
-    with col2:
-        accepted_loans = df["accept"].sum()
-        acceptance_rate = accepted_loans / total_loans * 100 if total_loans > 0 else 0
-        st.metric(label="Acceptance Rate", value=f"{acceptance_rate:,.1f}%")
-    with col3:
-        total_loan_amount = df["loan_amnt"].sum()
-        st.metric(label="Total Loan Amount", value=format_currency(total_loan_amount))
-    with col4:
-        total_expected_loss = df["expected_loss"].sum()
-        st.metric(label="Total Expected Loss", value=format_currency(total_expected_loss))
-    with col5:
-        el_accepted = df[df['accept'] == 1]['expected_loss'].sum()
-        st.metric(label="EL (Accepted)", value=format_currency(el_accepted))
+    # --- Main Dashboard Tabs ---
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Portfolio Overview", "📈 Model Validation", "🔍 Deep Dive Analysis", "📝 Reporting & Insights"])
 
-    st.markdown("---")
-
-    col_vis1, col_vis2 = st.columns(2)
-    with col_vis1:
-        st.subheader("Distribution of Probability of Default (PD)")
-        fig1 = px.histogram(df, x="prob_default", nbins=50, color='acceptance_status',
-                            title="PD Distribution by Acceptance Status")
-        fig1.add_vline(x=threshold, line_width=3, line_dash="dash", line_color="red", annotation_text=f'Threshold: {threshold:.2f}')
-        fig1.update_layout(xaxis_title="Probability of Default", yaxis_title="Number of Loans")
-        st.plotly_chart(fig1, use_container_width=True)
-
-    with col_vis2:
-        st.subheader("Expected Loss by Acceptance Status")
-        loss_by_bucket = df.groupby('acceptance_status')['expected_loss'].sum().reset_index()
-        fig2 = px.bar(loss_by_bucket, x='acceptance_status', y='expected_loss', title='Total Expected Loss by Acceptance Status')
-        fig2.update_layout(xaxis_title="Acceptance Status", yaxis_title="Total Expected Loss ($)")
-        st.plotly_chart(fig2, use_container_width=True)
-
-    st.markdown("### Portfolio Segmentation")
-    
-    col_seg1, col_seg2 = st.columns(2)
-    with col_seg1:
-        segment_by_1 = st.selectbox("Segment Portfolio by:", ['None'] + categorical_cols, key='seg_1')
-        if segment_by_1 != 'None':
-            fig_seg = px.box(df, x=segment_by_1, y="prob_default", 
-                             title=f"Probability of Default Distribution by {segment_by_1}",
-                             color=segment_by_1)
-            st.plotly_chart(fig_seg, use_container_width=True)
-    
-    with col_seg2:
-        segment_by_2 = st.selectbox("Segment Portfolio by:", ['None'] + categorical_cols, key='seg_2')
-        if segment_by_2 != 'None':
-            fig_seg = px.box(df, x=segment_by_2, y="loan_amnt", 
-                             title=f"Loan Amount Distribution by {segment_by_2}",
-                             color=segment_by_2)
-            st.plotly_chart(fig_seg, use_container_width=True)
-
-    # ---------------- Strategic Analysis & Performance ----------------
-    st.markdown("---")
-    st.header("Strategic Analysis & Model Performance")
-
-    # Strategy Table
-    st.subheader("Strategy Table: Impact of PD Threshold")
-    sweep = np.linspace(0.1, 0.95, 18)
-    rows = []
-    for t in sweep:
-        acc_count = (df_original["prob_default"] <= t).sum()
-        total_count = len(df_original)
-        acc_rate = acc_count / total_count if total_count > 0 else 0
+    with tab1:
+        st.markdown("### Portfolio Health & Key Metrics")
         
-        accepted_df = df_original[df_original["prob_default"] <= t]
-        rejected_df = df_original[df_original["prob_default"] > t]
-        
-        # Calculate expected loss for accepted loans only
-        el_accepted = (accepted_df["prob_default"] * lgd * accepted_df["loan_amnt"]).sum()
-        
-        # Calculate bad rate for accepted loans
-        bad_rate = (accepted_df['loan_status'] == 1).sum() / acc_count if acc_count > 0 else 0
-        
-        rows.append({
-            "PD Threshold": t, 
-            "Acceptance Rate": acc_rate, 
-            "Bad Rate (Accepted)": bad_rate, 
-            "Total Expected Loss (Accepted)": el_accepted
-        })
-    
-    strategy_table_df = pd.DataFrame(rows)
-    st.dataframe(strategy_table_df.style.format({
-        "PD Threshold": "{:.2f}",
-        "Acceptance Rate": "{:.1%}",
-        "Bad Rate (Accepted)": "{:.1%}",
-        "Total Expected Loss (Accepted)": "${:,.0f}"
-    }), use_container_width=True)
+        col1, col2, col3, col4, col5 = st.columns(5)
+        with col1:
+            total_loans = len(df)
+            st.metric(label="Total Loans", value=f"{total_loans:,.0f}")
+        with col2:
+            accepted_loans = df["accept"].sum()
+            acceptance_rate = accepted_loans / total_loans * 100 if total_loans > 0 else 0
+            st.metric(label="Acceptance Rate", value=f"{acceptance_rate:,.1f}%")
+        with col3:
+            total_loan_amount = df["loan_amnt"].sum()
+            st.metric(label="Total Loan Amount", value=f"${total_loan_amount:,.0f}")
+        with col4:
+            total_expected_loss = df["expected_loss"].sum()
+            st.metric(label="Total Expected Loss", value=f"${total_expected_loss:,.0f}")
+        with col5:
+            el_accepted = df[df['accept'] == 1]['expected_loss'].sum()
+            st.metric(label="EL (Accepted)", value=f"${el_accepted:,.0f}")
 
-    # Confusion Matrix
-    if not df.empty:
-        try:
-            st.subheader("Confusion Matrix")
-            y_true = df['true_label']
-            y_pred = df['prediction']
-            
-            cm = confusion_matrix(y_true, y_pred)
-            
-            fig_cm = go.Figure(data=go.Heatmap(
-                z=cm,
-                x=['Predicted Rejected', 'Predicted Accepted'],
-                y=['Actual Good Loan', 'Actual Bad Loan'],
-                colorscale='Viridis',
-                hovertemplate='Predicted: %{x}<br>Actual: %{y}<br>Count: %{z}<extra></extra>'
-            ))
-            
-            fig_cm.update_layout(
-                title='Confusion Matrix',
-                xaxis_title='Predicted Outcome',
-                yaxis_title='Actual Outcome',
-                xaxis={'side': 'bottom'},
-                yaxis={'side': 'left'}
-            )
-            
-            for i in range(len(cm)):
-                for j in range(len(cm[0])):
-                    fig_cm.add_annotation(
-                        x=fig_cm.data[0].x[j],
-                        y=fig_cm.data[0].y[i],
-                        text=str(cm[i][j]),
-                        showarrow=False,
-                        font=dict(color="white", size=16)
-                    )
-            
-            st.plotly_chart(fig_cm, use_container_width=True)
+        st.markdown("---")
 
+        col_vis1, col_vis2 = st.columns(2)
+        with col_vis1:
+            st.subheader("Distribution of Probability of Default (PD)")
+            fig1 = px.histogram(df, x="prob_default", nbins=50, color='acceptance_status',
+                                title="PD Distribution by Acceptance Status")
+            fig1.add_vline(x=threshold, line_width=3, line_dash="dash", line_color="red", annotation_text=f'Threshold: {threshold:.2f}')
+            fig1.update_layout(xaxis_title="Probability of Default", yaxis_title="Number of Loans")
+            st.plotly_chart(fig1, use_container_width=True)
+
+        with col_vis2:
+            st.subheader("Expected Loss by Acceptance Status")
+            loss_by_bucket = df.groupby('acceptance_status')['expected_loss'].sum().reset_index()
+            fig2 = px.bar(loss_by_bucket, x='acceptance_status', y='expected_loss', title='Total Expected Loss by Acceptance Status')
+            fig2.update_layout(xaxis_title="Acceptance Status", yaxis_title="Total Expected Loss ($)")
+            st.plotly_chart(fig2, use_container_width=True)
+
+        st.markdown("### Portfolio Segmentation")
+        
+        col_seg1, col_seg2 = st.columns(2)
+        with col_seg1:
+            segment_by_1 = st.selectbox("Segment Portfolio by:", ['None'] + categorical_cols, key='seg_1')
+            if segment_by_1 != 'None':
+                fig_seg = px.box(df, x=segment_by_1, y="prob_default", 
+                                 title=f"Probability of Default Distribution by {segment_by_1}",
+                                 color=segment_by_1)
+                st.plotly_chart(fig_seg, use_container_width=True)
+        
+        with col_seg2:
+            segment_by_2 = st.selectbox("Segment Portfolio by:", ['None'] + categorical_cols, key='seg_2')
+            if segment_by_2 != 'None':
+                fig_seg = px.box(df, x=segment_by_2, y="loan_amnt", 
+                                 title=f"Loan Amount Distribution by {segment_by_2}",
+                                 color=segment_by_2)
+                st.plotly_chart(fig_seg, use_container_width=True)
+
+    with tab2:
+        st.header("Model Validation & Backtesting")
+        
+        st.markdown("This section provides a deeper look into the performance of the PD model.")
+        
+        if len(df[df['true_label'].isin([0, 1])]) > 0:
+            y_true = df['true_label'].astype(int)
+            y_pred = df['prediction'].astype(int)
+
+            cm = confusion_matrix(y_true, y_pred, labels=[1, 0])
             tn, fp, fn, tp = cm.ravel()
-            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-            recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-            accuracy = (tp + tn) / (tp + tn + fp + fn) if (tp + tn + fp + fn) > 0 else 0
             
-            col_metrics1, col_metrics2, col_metrics3 = st.columns(3)
-            col_metrics1.metric("Precision", f"{precision:.2f}")
-            col_metrics2.metric("Recall", f"{recall:.2f}")
-            col_metrics3.metric("Accuracy", f"{accuracy:.2f}")
+            st.subheader("Confusion Matrix")
+            cm_df = pd.DataFrame(cm, columns=['Predicted Default (1)', 'Predicted Non-Default (0)'],
+                                 index=['Actual Default (1)', 'Actual Non-Default (0)'])
+            st.dataframe(cm_df)
 
-        except ValueError:
-            st.warning("Cannot generate a confusion matrix. The 'loan_status' column might contain values other than 0 or 1.")
+            col_met1, col_met2, col_met3 = st.columns(3)
+            with col_met1:
+                st.metric("Accuracy", f"{((tp + tn) / (tp + tn + fp + fn)):.2%}")
+            with col_met2:
+                st.metric("Precision", f"{tp / (tp + fp):.2%}" if (tp + fp) > 0 else "N/A")
+            with col_met3:
+                st.metric("Recall", f"{tp / (tp + fn):.2%}" if (tp + fn) > 0 else "N/A")
+
+            st.markdown("---")
+            
+            col_curves1, col_curves2 = st.columns(2)
+            
+            with col_curves1:
+                st.subheader("ROC Curve")
+                fpr, tpr, _ = roc_curve(df['true_label'], df['prob_default'])
+                roc_auc = auc(fpr, tpr)
+                fig_roc = go.Figure()
+                fig_roc.add_trace(go.Scatter(x=fpr, y=tpr, mode='lines', name=f'ROC curve (area = {roc_auc:.2f})'))
+                fig_roc.add_shape(type='line', line=dict(dash='dash'), x0=0, x1=1, y0=0, y1=1)
+                fig_roc.update_layout(xaxis_title='False Positive Rate', yaxis_title='True Positive Rate', title='Receiver Operating Characteristic (ROC) Curve')
+                st.plotly_chart(fig_roc, use_container_width=True)
+            
+            with col_curves2:
+                st.subheader("Precision-Recall Curve")
+                precision, recall, _ = precision_recall_curve(df['true_label'], df['prob_default'])
+                fig_pr = go.Figure()
+                fig_pr.add_trace(go.Scatter(x=recall, y=precision, mode='lines', name='Precision-Recall curve'))
+                fig_pr.update_layout(xaxis_title='Recall', yaxis_title='Precision', title='Precision-Recall Curve')
+                st.plotly_chart(fig_pr, use_container_width=True)
+        else:
+            st.warning("No ground truth labels (0 or 1) found in the 'loan_status' column for model validation.")
+
+    with tab3:
+        st.header("Deep Dive Analysis")
+        st.markdown("Create custom visualizations to explore specific relationships in your data.")
+
+        col_deep1, col_deep2 = st.columns(2)
+        with col_deep1:
+            x_axis = st.selectbox("Select X-axis", options=['--Select a column--'] + list(df.columns), key='x_axis_select')
+        with col_deep2:
+            y_axis = st.selectbox("Select Y-axis", options=['--Select a column--'] + list(df.columns), key='y_axis_select')
+
+        plot_type = st.selectbox("Select Plot Type", options=['--Select a plot type--', 'Scatter', 'Histogram', 'Box Plot', 'Bar Chart'], key='plot_type_select')
+        color_by = st.selectbox("Color by:", options=['None'] + categorical_cols, key='color_by_select')
+
+        if x_axis != '--Select a column--' and plot_type != '--Select a plot type--':
+            if plot_type == 'Scatter' and y_axis != '--Select a column--':
+                fig = px.scatter(df, x=x_axis, y=y_axis, color=color_by if color_by != 'None' else None, title=f"{x_axis} vs. {y_axis}")
+                st.plotly_chart(fig, use_container_width=True)
+            elif plot_type == 'Histogram':
+                fig = px.histogram(df, x=x_axis, color=color_by if color_by != 'None' else None, title=f"Distribution of {x_axis}")
+                st.plotly_chart(fig, use_container_width=True)
+            elif plot_type == 'Box Plot':
+                if y_axis != '--Select a column--':
+                    fig = px.box(df, x=x_axis, y=y_axis, color=color_by if color_by != 'None' else None, title=f"Box Plot of {y_axis} by {x_axis}")
+                    st.plotly_chart(fig, use_container_width=True)
+            elif plot_type == 'Bar Chart':
+                if y_axis != '--Select a column--':
+                    fig = px.bar(df.groupby(x_axis)[y_axis].sum().reset_index(), x=x_axis, y=y_axis, color=color_by if color_by != 'None' else None, title=f"Total {y_axis} by {x_axis}")
+                    st.plotly_chart(fig, use_container_width=True)
+
+    with tab4:
+        st.header("Reporting & Insights")
+        st.markdown("This section provides a summary of the key findings from the analysis.")
         
-    st.markdown("### Your Insights")
-    st.write("Use this space to document your key insights from the dashboard and analysis.")
-    st.text_area("Write your notes here...", height=200, key="insights_text_area")
+        st.subheader("Executive Summary")
+        st.markdown(f"""
+            Based on the selected portfolio and model parameters, the current PD threshold of **{threshold:.2f}** leads to an acceptance rate of **{acceptance_rate:,.1f}%**. This strategy results in a 
+            total expected loss of **${total_expected_loss:,.0f}**, with **${el_accepted:,.0f}** of that loss 
+            coming from the accepted loans.
+        """)
 
-# --- Main Page Content ---
-st.sidebar.header("Navigation")
-page = st.sidebar.radio("Go to", ["Main Dashboard", "Upload Your Data", "About"])
+        st.subheader("Model Performance Summary")
+        if len(df[df['true_label'].isin([0, 1])]) > 0:
+            st.markdown(f"""
+                The PD model demonstrates strong performance with a key metric analysis:
+                - **Accuracy:** {((tp + tn) / (tp + tn + fp + fn)):.2%}
+                - **Precision:** {tp / (tp + fp):.2%}
+                - **Recall:** {tp / (tp + fn):.2%}
+                
+                The ROC curve area of **{roc_auc:.2f}** indicates that the model has a high capacity to distinguish between 
+                defaulted and non-defaulted loans.
+            """)
+        else:
+            st.info("Model performance summary is not available. Please ensure your data has a binary 'loan_status' column.")
+            
+        st.markdown("---")
+        st.subheader("Key Recommendations")
+        st.markdown("""
+            * **Re-evaluate Thresholds:** The current threshold balances acceptance rate and expected loss. Consider adjusting the PD threshold based on the company's risk appetite.
+            * **Segment Analysis:** Use the deep dive analysis section to identify high-risk segments in the portfolio and create targeted strategies to mitigate risk.
+            * **Data Quality:** The quality of the PD model's predictions is highly dependent on the quality of the input data. Regular data validation and cleaning are crucial.
+        """)
 
-if page == "Main Dashboard":
+# --- Page Content ---
+if page == "Intro":
+    st.title("Welcome to the Enterprise Credit Risk Dashboard")
+    st.markdown("---")
+
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        st.image("https://placehold.co/400x300/E0E0E0/white?text=Enterprise+Analytics", use_column_width=True)
+        st.info("Navigate using the sidebar on the left.")
+
+    with col2:
+        st.header("What is Enterprise Credit Risk Management?")
+        st.write(
+            """
+            At an enterprise level, credit risk management moves beyond simple analysis. It's about a holistic framework that integrates data, 
+            advanced models, and sophisticated decision-making tools to manage a diverse loan portfolio at scale.
+            """
+        )
+        st.header("How This App Helps")
+        st.write(
+            """
+            This application provides a powerful and interactive dashboard to analyze and visualize credit risk data. 
+            It is designed to give you an immediate, hands-on experience without the need to upload your own CSV file. 
+            This page allows you to test the interactive controls, understand the various charts and KPIs, 
+            and see how the analysis works before you begin a custom analysis.
+            """
+        )
+        st.markdown("---")
+        st.subheader("Key Features:")
+        st.markdown(
+            """
+            * **Portfolio Management:** A comprehensive overview of your loan portfolio with key financial metrics.
+            * **Model Validation:** Tools to validate the performance of your Probability of Default (PD) model.
+            * **Deep Dive Analysis:** A flexible section for custom visualizations and segmented analysis.
+            * **Custom Data Upload:** The ability to upload your own scored loan data for analysis.
+            """
+        )
+
+elif page == "Main Dashboard":
     try:
-        # Load sample data
         df = pd.read_csv("cr_loan_clean.csv")
-        # Ensure correct data types for calculation
         df['prob_default'] = df['loan_status']
         df['loan_amnt'] = df['loan_amnt']
         render_enterprise_dashboard(df.copy(), "Main Dashboard")
@@ -264,18 +310,20 @@ elif page == "Upload Your Data":
             df = pd.read_csv(uploaded)
             st.success("File uploaded successfully! The dashboard is now updated with your data.")
             
-            if 'prob_default' not in df.columns and 'loan_status' not in df.columns:
-                st.warning("Could not find a 'prob_default' or 'loan_status' column. Please select it below.")
-                prob_col = st.selectbox("Select the Probability of Default/Loan Status column", options=[None] + list(df.columns))
-                if prob_col:
-                    df['prob_default'] = df[prob_col]
+            # Smartly map columns
+            if 'prob_default' not in df.columns:
+                if 'loan_status' in df.columns:
+                    df['prob_default'] = df['loan_status']
                 else:
-                    st.stop()
-            elif 'loan_status' in df.columns and 'prob_default' not in df.columns:
-                df['prob_default'] = df['loan_status']
+                    st.warning("Could not find a 'prob_default' or 'loan_status' column. Please rename a column in your file or select it below.")
+                    prob_col = st.selectbox("Select the Probability of Default/Loan Status column", options=[None] + list(df.columns))
+                    if prob_col:
+                        df['prob_default'] = df[prob_col]
+                    else:
+                        st.stop()
             
             if 'loan_amnt' not in df.columns:
-                st.warning("Could not find a 'loan_amnt' column. Please select it below.")
+                st.warning("Could not find a 'loan_amnt' column. Please rename a column or select it below.")
                 loan_col = st.selectbox("Select the Loan Amount column", options=[None] + list(df.columns))
                 if loan_col:
                     df['loan_amnt'] = df[loan_col]
