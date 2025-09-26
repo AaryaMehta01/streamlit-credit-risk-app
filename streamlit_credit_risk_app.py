@@ -292,7 +292,7 @@ if page == "Intro":
 
     col1, col2 = st.columns([1, 2])
 
-    with col1:
+    with col2:
         st.header("What is Enterprise Credit Risk Management?")
         st.write(
             """
