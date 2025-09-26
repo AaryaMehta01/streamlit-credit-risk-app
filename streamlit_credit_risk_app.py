@@ -1,234 +1,166 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import joblib
 import plotly.express as px
-from io import StringIO
+import plotly.graph_objects as go
 
-# --- File Paths ---
-MODEL_PATH = 'model_credit_risk.pkl'
-SCALER_PATH = 'numerical_vars_scaler.pkl'
-DATA_PATH = 'cr_loan_clean.csv'
-
-# --- Load Model and Scaler ---
-@st.cache_resource
-def load_model_and_scaler():
-    """Loads the pre-trained model and scaler from pkl files."""
-    try:
-        model = joblib.load(MODEL_PATH)
-        scaler = joblib.load(SCALER_PATH)
-        return model, scaler
-    except FileNotFoundError:
-        st.error(f"Error: A required file was not found. Please ensure '{MODEL_PATH}' and '{SCALER_PATH}' are in the same directory as this app.")
-        return None, None
-
-model, scaler = load_model_and_scaler()
-
-# --- Load Data for Data Insights Page ---
-@st.cache_data
-def load_data():
-    """Loads the clean credit loan data for the insights page."""
-    try:
-        return pd.read_csv(DATA_PATH)
-    except FileNotFoundError:
-        st.error(f"Error: The dataset '{DATA_PATH}' was not found. Please ensure it is in the same directory.")
-        return pd.DataFrame()
-
-df_clean = load_data()
-
-# --- Preprocessing Function for Predictions ---
-def preprocess_data(df):
-    """
-    Preprocesses a DataFrame for the credit risk prediction model.
-    Handles one-hot encoding and scaling.
-    """
-    # Define a list of all columns the model expects
-    all_cols = ['person_age', 'person_income', 'person_emp_length', 'loan_amnt', 'loan_int_rate',
-                'loan_percent_income', 'cb_person_cred_hist_length',
-                'person_home_ownership_MORTGAGE', 'person_home_ownership_OTHER',
-                'person_home_ownership_OWN', 'person_home_ownership_RENT',
-                'loan_intent_DEBTCONSOLIDATION', 'loan_intent_EDUCATION',
-                'loan_intent_HOMEIMPROVEMENT', 'loan_intent_MEDICAL',
-                'loan_intent_PERSONAL', 'loan_intent_VENTURE', 'loan_grade_A',
-                'loan_grade_B', 'loan_grade_C', 'loan_grade_D', 'loan_grade_E',
-                'loan_grade_F', 'loan_grade_G', 'cb_person_default_on_file_N',
-                'cb_person_default_on_file_Y']
-    
-    # One-hot encode categorical features
-    categorical_cols = ['person_home_ownership', 'loan_intent', 'loan_grade', 'cb_person_default_on_file']
-    encoded_df = pd.get_dummies(df, columns=categorical_cols, drop_first=False)
-
-    # Align columns to ensure the same structure as training data
-    for col in all_cols:
-        if col not in encoded_df.columns:
-            encoded_df[col] = 0
-
-    # Scale numerical features
-    numerical_cols = ['person_age', 'person_income', 'person_emp_length', 'loan_amnt', 'loan_int_rate', 'loan_percent_income', 'cb_person_cred_hist_length']
-    encoded_df[numerical_cols] = scaler.transform(encoded_df[numerical_cols])
-
-    # Reorder columns to match the training data
-    encoded_df = encoded_df[all_cols]
-    
-    return encoded_df
-
-# --- Page Configuration ---
 st.set_page_config(
-    page_title="Credit Risk Predictor",
-    page_icon="💰",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    page_title="Upload Your Data",
+    page_icon="📁",
+    layout="wide"
 )
 
-# --- Sidebar Navigation ---
-st.sidebar.header("Navigation")
-page = st.sidebar.radio("Go to", ["Home", "Predict Credit Risk", "Batch Prediction", "Data Insights"])
+# ---------------- Header ----------------
+col1, col2 = st.columns([1,3])
+with col1:
+    st.title("Upload Your Data")
+with col2:
+    st.markdown("<div style='text-align:right;'>Built with SQL + Python + Power BI + Matplotlib</div>", unsafe_allow_html=True)
+st.markdown("---")
 
-# --- Home Page ---
-if page == "Home":
-    st.title("Credit Risk Prediction App")
-    st.markdown("""
-        Welcome to the Credit Risk Prediction App! This tool helps you understand and predict loan defaults.
-        
-        Using a machine learning model, this app provides insights into the factors influencing credit risk. You can:
-        
-        1. **Predict Credit Risk**: Input a potential borrower's details to get a real-time risk assessment.
-        2. **Batch Prediction**: Upload a CSV file to get predictions for multiple borrowers at once.
-        3. **Explore Data Insights**: Visualize and analyze the underlying loan data to understand trends and correlations.
-        
-        This application is designed to be a helpful starting point for understanding and leveraging data science in financial services.
-    """)
-    st.image("https://placehold.co/800x400/0175B5/FFFFFF?text=Credit+Risk+Prediction")
+# ---------------- Sidebar ----------------
+st.sidebar.header("🔧 Controls")
+threshold = st.sidebar.slider("Probability Threshold (accept if PD ≤ threshold)", min_value=0.0, max_value=1.0, value=0.85, step=0.01)
+lgd = st.sidebar.slider("Loss Given Default (LGD)", 0.0, 1.0, 1.0, 0.05)
+ead_multiplier = st.sidebar.number_input("EAD Multiplier (scale loan amounts)", value=1.0, step=0.1)
 
-# --- Single Prediction Page ---
-elif page == "Predict Credit Risk":
-    if model and scaler:
-        st.title("Predict Credit Risk")
-        st.markdown("Enter the borrower's details to predict their loan default risk.")
+# ---------------- Data Upload ----------------
+st.subheader("📥 Upload Your Scored Loans (CSV)")
+st.caption("Required columns: `prob_default` (0-1), `loan_amnt` (numeric). Additional columns are welcome.")
+uploaded = st.file_uploader("Upload CSV", type=["csv"])
 
-        # --- Input Widgets ---
-        with st.form("prediction_form"):
-            col1, col2 = st.columns(2)
+if uploaded is None:
+    st.info("Please upload a CSV file to begin the analysis.")
+else:
+    try:
+        df = pd.read_csv(uploaded)
+        st.success("File uploaded successfully!")
+    except Exception as e:
+        st.error(f"Error reading file: {e}")
+        st.stop()
 
-            with col1:
-                person_age = st.number_input("Age", min_value=18, max_value=100, value=30)
-                person_income = st.number_input("Annual Income", min_value=1000, value=60000, help="e.g., $60,000")
-                person_emp_length = st.slider("Employment Length (years)", min_value=0.0, max_value=60.0, value=5.0)
-                loan_amnt = st.number_input("Loan Amount", min_value=500, max_value=35000, value=15000)
-                loan_int_rate = st.number_input("Loan Interest Rate (%)", min_value=5.0, max_value=25.0, value=12.0)
-                loan_percent_income = st.slider("Loan as % of Income", min_value=0.0, max_value=1.0, value=0.25)
-                cb_person_cred_hist_length = st.slider("Credit History Length (years)", min_value=2, max_value=30, value=5)
-                cb_person_default_on_file = st.selectbox("Credit Default on File?", ["No", "Yes"])
+    # Ensure required columns exist
+    required_cols = ['prob_default', 'loan_amnt']
+    if not all(col in df.columns for col in required_cols):
+        st.error(f"The uploaded CSV must contain the following columns: {required_cols}. It currently has {list(df.columns)}.")
+        st.stop()
 
-            with col2:
-                person_home_ownership = st.selectbox("Home Ownership", ["RENT", "OWN", "MORTGAGE", "OTHER"])
-                loan_intent = st.selectbox("Loan Intent", ["EDUCATION", "MEDICAL", "VENTURE", "PERSONAL", "DEBTCONSOLIDATION", "HOMEIMPROVEMENT"])
-                loan_grade = st.selectbox("Loan Grade", ["A", "B", "C", "D", "E", "F", "G"])
+    # ---------------- Main Dashboard Logic ----------------
+    df["loan_amnt"] = df["loan_amnt"] * ead_multiplier
+    df["expected_loss"] = df["prob_default"] * lgd * df["loan_amnt"]
+    df["accept"] = (df["prob_default"] <= threshold).astype(int)
 
-            submitted = st.form_submit_button("Predict")
+    # ---------------- KPIs ----------------
+    st.markdown("### 📊 Key Performance Indicators")
+    col1, col2, col3, col4 = st.columns(4)
 
-        if submitted:
-            # Create a DataFrame from the input data
-            input_df = pd.DataFrame([{
-                'person_age': person_age,
-                'person_income': person_income,
-                'person_home_ownership': person_home_ownership,
-                'person_emp_length': person_emp_length,
-                'loan_intent': loan_intent,
-                'loan_grade': loan_grade,
-                'loan_amnt': loan_amnt,
-                'loan_int_rate': loan_int_rate,
-                'loan_percent_income': loan_percent_income,
-                'cb_person_default_on_file': "Y" if cb_person_default_on_file == "Yes" else "N",
-                'cb_person_cred_hist_length': cb_person_cred_hist_length
-            }])
+    with col1:
+        total_loans = len(df)
+        st.metric(label="Total Loans", value=f"{total_loans:,.0f}")
+    with col2:
+        accepted_loans = df["accept"].sum()
+        acceptance_rate = accepted_loans / total_loans * 100
+        st.metric(label="Acceptance Rate", value=f"{acceptance_rate:,.1f}%")
+    with col3:
+        total_expected_loss = df["expected_loss"].sum()
+        st.metric(label="Total Expected Loss", value=f"${total_expected_loss:,.0f}")
+    with col4:
+        total_accepted_loss = df[df['accept'] == 1]['expected_loss'].sum()
+        st.metric(label="Expected Loss (Accepted Loans)", value=f"${total_accepted_loss:,.0f}")
 
-            # Preprocess the data and make predictions
-            preprocessed_df = preprocess_data(input_df)
-            prediction = model.predict(preprocessed_df)
-            prediction_proba = model.predict_proba(preprocessed_df)
+    st.markdown("---")
 
-            st.subheader("Prediction Result")
-            if prediction[0] == 0:
-                st.success("The model predicts a **low risk** of loan default.")
-            else:
-                st.error("The model predicts a **high risk** of loan default.")
+    # ---------------- Visualizations (Plotly) ----------------
+    st.markdown("### 📈 Interactive Data Visualizations")
+    col_chart1, col_chart2 = st.columns(2)
 
-            st.info(f"Probability of No Default (Class 0): **{prediction_proba[0][0]:.2f}**")
-            st.warning(f"Probability of Default (Class 1): **{prediction_proba[0][1]:.2f}**")
-
-# --- Batch Prediction Page ---
-elif page == "Batch Prediction":
-    st.title("Batch Credit Risk Prediction")
-    st.markdown("Upload a CSV file to get risk predictions for multiple borrowers. The file must contain the following columns:")
-    st.code("person_age, person_income, person_home_ownership, person_emp_length, loan_intent, loan_grade, loan_amnt, loan_int_rate, loan_percent_income, cb_person_default_on_file, cb_person_cred_hist_length")
-    
-    uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
-    
-    if uploaded_file is not None:
-        try:
-            uploaded_df = pd.read_csv(uploaded_file)
-            st.write("Original Data:")
-            st.dataframe(uploaded_df.head())
-            
-            # Preprocess the uploaded data
-            preprocessed_df = preprocess_data(uploaded_df.copy())
-            
-            # Make predictions
-            predictions = model.predict(preprocessed_df)
-            probabilities = model.predict_proba(preprocessed_df)
-            
-            # Add results to the original DataFrame
-            uploaded_df['prediction_status'] = np.where(predictions == 0, 'Low Risk', 'High Risk')
-            uploaded_df['probability_of_default'] = probabilities[:, 1]
-            
-            st.success("Predictions completed!")
-            st.write("Prediction Results:")
-            st.dataframe(uploaded_df)
-
-            # Create a download button for the results
-            csv_output = uploaded_df.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="Download Results as CSV",
-                data=csv_output,
-                file_name='credit_risk_predictions.csv',
-                mime='text/csv'
-            )
-            
-        except Exception as e:
-            st.error(f"An error occurred while processing the file: {e}")
-
-# --- Data Insights Page ---
-elif page == "Data Insights":
-    if not df_clean.empty:
-        st.title("Data Insights")
-        st.markdown("Explore the key trends and patterns in the loan dataset.")
-
-        # --- Visualizations ---
-        st.subheader("Loan Status Distribution")
-        fig1 = px.histogram(df_clean, x='loan_status', color='loan_status',
-                            title="Distribution of Loan Status (0 = No Default, 1 = Default)",
-                            labels={'loan_status': 'Loan Status'})
+    # Chart 1: Distribution of Probability of Default
+    with col_chart1:
+        fig1 = px.histogram(df, x="prob_default", nbins=50, title="Distribution of Probability of Default (PD)")
+        fig1.add_vline(x=threshold, line_width=3, line_dash="dash", line_color="red", annotation_text=f'Threshold: {threshold:.2f}')
+        fig1.update_layout(xaxis_title="Probability of Default", yaxis_title="Frequency")
         st.plotly_chart(fig1, use_container_width=True)
 
-        st.subheader("Loan Intent vs. Loan Status")
-        fig2 = px.histogram(df_clean, x='loan_intent', color='loan_status',
-                            title="Loan Intent by Default Status",
-                            labels={'loan_intent': 'Loan Intent', 'loan_status': 'Loan Status'},
-                            barmode='group')
+    # Chart 2: Expected Loss by Acceptance
+    with col_chart2:
+        loss_by_bucket = df.groupby(df['accept'].map({1: 'Accepted', 0: 'Rejected'}))['expected_loss'].sum().reset_index()
+        fig2 = px.bar(loss_by_bucket, x='index', y='expected_loss', title='Expected Loss by Acceptance Status')
+        fig2.update_layout(xaxis_title="Acceptance Status", yaxis_title="Total Expected Loss ($)")
         st.plotly_chart(fig2, use_container_width=True)
-        
-        st.subheader("Loan Grade vs. Loan Status")
-        fig3 = px.histogram(df_clean, x='loan_grade', color='loan_status',
-                            title="Loan Grade by Default Status",
-                            labels={'loan_grade': 'Loan Grade', 'loan_status': 'Loan Status'},
-                            barmode='group')
-        st.plotly_chart(fig3, use_container_width=True)
 
-        st.subheader("Loan Amount vs. Interest Rate")
-        fig4 = px.scatter(df_clean, x='loan_amnt', y='loan_int_rate', color='loan_status',
-                          title="Loan Amount vs. Interest Rate by Default Status",
-                          labels={'loan_amnt': 'Loan Amount', 'loan_int_rate': 'Interest Rate', 'loan_status': 'Loan Status'})
-        st.plotly_chart(fig4, use_container_width=True)
-    else:
-        st.warning("Data insights are not available as the dataset could not be loaded.")
+    st.markdown("---")
+
+    # ---------------- Strategy Curve ----------------
+    st.markdown("### 📉 Strategy Curve")
+    st.write("Analyze the trade-off between Acceptance Rate and Expected Loss at different PD thresholds.")
+    sweep = np.linspace(0.01, 1.0, 100)
+    strategy_data = []
+    for t in sweep:
+        accepted_df = df[df['prob_default'] <= t]
+        acceptance_rate = len(accepted_df) / len(df)
+        expected_loss = accepted_df['expected_loss'].sum()
+        strategy_data.append({'threshold': t, 'acceptance_rate': acceptance_rate, 'expected_loss': expected_loss})
+    strategy_df = pd.DataFrame(strategy_data)
+
+    fig_strategy = go.Figure()
+    fig_strategy.add_trace(go.Scatter(x=strategy_df['acceptance_rate'], y=strategy_df['expected_loss'], mode='lines', name='Strategy Curve'))
+    fig_strategy.update_layout(
+        title='Strategy Curve: Acceptance Rate vs. Total Expected Loss',
+        xaxis_title='Acceptance Rate',
+        yaxis_title='Total Expected Loss ($)',
+    )
+    fig_strategy.add_annotation(
+        x=strategy_df[strategy_df['threshold'] == threshold]['acceptance_rate'].iloc[0],
+        y=strategy_df[strategy_df['threshold'] == threshold]['expected_loss'].iloc[0],
+        text=f'Current Threshold: {threshold}',
+        showarrow=True,
+        arrowhead=1,
+        ax=0,
+        ay=-40
+    )
+    st.plotly_chart(fig_strategy, use_container_width=True)
+
+    st.markdown("---")
+
+    # ---------------- Strategy Table ----------------
+    st.markdown("#### 📋 Strategy Table (Sweep Thresholds)")
+    st.write("This table shows key metrics at various probability thresholds.")
+    sweep_table = np.linspace(0.1, 0.95, 18)
+    rows = []
+    for t in sweep_table:
+        acc_rate = (df["prob_default"] <= t).mean()
+        acc_df = df[df["prob_default"] <= t]
+        # Calculate bad rate only for accepted loans
+        bad_rate_acc = (acc_df['prob_default'] > t).mean() if not acc_df.empty else 0.0
+        el_total = acc_df["expected_loss"].sum()
+        rows.append({"Threshold": t, "Acceptance Rate": acc_rate, "Bad Rate (Accepted)": bad_rate_acc, "Expected Loss": el_total})
+    table = pd.DataFrame(rows)
+    st.dataframe(table.style.format({
+        "Threshold": "{:.2f}",
+        "Acceptance Rate": "{:.0%}",
+        "Bad Rate (Accepted)": "{:.1%}",
+        "Expected Loss": "${:,.0f}"
+    }))
+
+    st.markdown("---")
+
+    # ---------------- Segmented Analysis ----------------
+    st.markdown("### 🔍 Segmented Analysis")
+    segment_by = st.selectbox("Select a variable to segment by:", ['None'] + [col for col in df.columns if df[col].dtype == 'object'])
+
+    if segment_by != 'None':
+        fig_seg = px.box(df, x=segment_by, y="prob_default", title=f"Probability of Default Distribution by {segment_by}")
+        st.plotly_chart(fig_seg, use_container_width=True)
+
+        st.markdown("#### Key Metrics by Segment")
+        agg_df = df.groupby(segment_by).agg(
+            total_loans=('loan_amnt', 'count'),
+            total_loan_amount=('loan_amnt', 'sum'),
+            total_expected_loss=('expected_loss', 'sum'),
+            avg_expected_loss=('expected_loss', 'mean')
+        ).reset_index()
+        st.dataframe(agg_df.style.format({
+            "total_loan_amount": "${:,.0f}",
+            "total_expected_loss": "${:,.0f}",
+            "avg_expected_loss": "${:,.2f}"
+        }))
