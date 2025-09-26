@@ -117,7 +117,7 @@ def render_enterprise_dashboard(df, page_title):
         with col_vis1:
             st.subheader("Distribution of Probability of Default (PD)")
             fig1 = px.histogram(df, x="prob_default", nbins=50, color='acceptance_status',
-                                title="PD Distribution by Acceptance Status")
+                                 title="PD Distribution by Acceptance Status")
             fig1.add_vline(x=threshold, line_width=3, line_dash="dash", line_color="red", annotation_text=f'Threshold: {threshold:.2f}')
             fig1.update_layout(xaxis_title="Probability of Default", yaxis_title="Number of Loans")
             st.plotly_chart(fig1, use_container_width=True)
