@@ -72,31 +72,45 @@ def render_dashboard(df, page_title):
         fig2.update_layout(xaxis_title="Acceptance Status", yaxis_title="Total Expected Loss ($)")
         st.plotly_chart(fig2, use_container_width=True)
 
-    # --- New Visualizations ---
+    # --- New Visualizations (Dynamic) ---
     st.markdown("---")
-    st.markdown("### 📊 Additional Visualizations")
-    col_new_charts1, col_new_charts2 = st.columns(2)
-    with col_new_charts1:
-        # Histogram for loan amount distribution
-        fig_loan_amount = px.histogram(df, x="loan_amnt", nbins=50, title="Distribution of Loan Amounts")
-        fig_loan_amount.update_layout(xaxis_title="Loan Amount ($)", yaxis_title="Frequency")
-        st.plotly_chart(fig_loan_amount, use_container_width=True)
-        
-    with col_new_charts2:
-        # Pie chart for categorical distribution, dynamically selected
-        categorical_cols = [col for col in df.columns if df[col].dtype == 'object' and col not in ['acceptance_status']]
-        if categorical_cols:
-            selected_cat = st.selectbox("Select a category for the pie chart:", categorical_cols)
-            fig_pie = px.pie(
-                df,
-                names=selected_cat,
-                title=f"Distribution of Loans by {selected_cat}",
+    st.markdown("### 📊 Dynamic Visualizations")
+
+    col_vis_controls1, col_vis_controls2 = st.columns(2)
+    
+    numerical_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col]) and col not in ['prob_default', 'loan_amnt', 'expected_loss', 'accept']]
+    categorical_cols = [col for col in df.columns if df[col].dtype == 'object' and col not in ['acceptance_status']]
+
+    with col_vis_controls1:
+        selected_col = st.selectbox(
+            "Select a column to visualize:", 
+            options=['--Select a column--'] + numerical_cols + categorical_cols
+        )
+    with col_vis_controls2:
+        color_by_col = st.selectbox(
+            "Segment by (color):", 
+            options=['None'] + categorical_cols
+        )
+
+    if selected_col != '--Select a column--':
+        if selected_col in numerical_cols:
+            fig = px.histogram(
+                df, 
+                x=selected_col, 
+                color=color_by_col if color_by_col != 'None' else None,
+                title=f"Distribution of {selected_col}"
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        elif selected_col in categorical_cols:
+            fig = px.pie(
+                df, 
+                names=selected_col, 
+                color=color_by_col if color_by_col != 'None' else None,
+                title=f"Distribution of Loans by {selected_col}",
                 hole=0.3
             )
-            st.plotly_chart(fig_pie, use_container_width=True)
-        else:
-            st.info("No categorical columns found in the dataset for a pie chart.")
-
+            st.plotly_chart(fig, use_container_width=True)
+        
     st.markdown("---")
 
     # ---------------- Strategy Curve ----------------
@@ -209,6 +223,9 @@ if page == "Intro":
         )
         st.write(
             """
+            ### What is the Main Dashboard?
+            The **Main Dashboard** is your sandbox for exploring the app's features with pre-loaded sample data. It's designed to give you an immediate, hands-on experience without the need to upload your own CSV file. This page allows you to test the interactive controls, understand the various charts and KPIs, and see how the analysis works before you begin a custom analysis.
+
             ### Key Features:
             * **Test Dashboard:** Explore a pre-loaded, cleaned dataset with various interactive charts.
             * **Upload Your Data:** Analyze your own CSV file by mapping its columns to the required fields.
