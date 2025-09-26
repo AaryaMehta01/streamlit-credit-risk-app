@@ -12,6 +12,10 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- Sidebar Navigation ---
+st.sidebar.header("Navigation")
+page = st.sidebar.radio("Go to", ["Intro", "Main Dashboard", "Upload Your Data", "About"])
+
 # --- Helper Function for Dashboard Content ---
 def render_enterprise_dashboard(df, page_title):
     """
@@ -143,7 +147,7 @@ def render_enterprise_dashboard(df, page_title):
         
         st.markdown("This section provides a deeper look into the performance of the PD model.")
         
-        if len(df[df['true_label'].isin([0, 1])]) > 0:
+        if 'true_label' in df.columns and len(df[df['true_label'].isin([0, 1])]) > 0:
             y_true = df['true_label'].astype(int)
             y_pred = df['prediction'].astype(int)
 
@@ -228,7 +232,7 @@ def render_enterprise_dashboard(df, page_title):
         """)
 
         st.subheader("Model Performance Summary")
-        if len(df[df['true_label'].isin([0, 1])]) > 0:
+        if 'true_label' in df.columns and len(df[df['true_label'].isin([0, 1])]) > 0:
             st.markdown(f"""
                 The PD model demonstrates strong performance with a key metric analysis:
                 - **Accuracy:** {((tp + tn) / (tp + tn + fp + fn)):.2%}
@@ -249,7 +253,7 @@ def render_enterprise_dashboard(df, page_title):
             * **Data Quality:** The quality of the PD model's predictions is highly dependent on the quality of the input data. Regular data validation and cleaning are crucial.
         """)
 
-# --- Page Content ---
+# --- Main Page Content ---
 if page == "Intro":
     st.title("Welcome to the Enterprise Credit Risk Dashboard")
     st.markdown("---")
