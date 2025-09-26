@@ -3,49 +3,36 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+from PIL import Image
 
+# --- Page Configuration ---
 st.set_page_config(
-    page_title="Upload Your Data",
-    page_icon="📁",
+    page_title="Credit Risk Analyzer",
+    page_icon="📊",
     layout="wide"
 )
 
-# ---------------- Header ----------------
-col1, col2 = st.columns([1,3])
-with col1:
-    st.title("Upload Your Data")
-with col2:
-    st.markdown("<div style='text-align:right;'>Built with SQL + Python + Power BI + Matplotlib</div>", unsafe_allow_html=True)
-st.markdown("---")
+# --- Sidebar Navigation ---
+st.sidebar.title("Navigation")
+page = st.sidebar.radio("Go to", ["Intro", "Main Dashboard", "Upload Your Data", "About"])
 
-# ---------------- Sidebar ----------------
-st.sidebar.header("🔧 Controls")
-threshold = st.sidebar.slider("Probability Threshold (accept if PD ≤ threshold)", min_value=0.0, max_value=1.0, value=0.85, step=0.01)
-lgd = st.sidebar.slider("Loss Given Default (LGD)", 0.0, 1.0, 1.0, 0.05)
-ead_multiplier = st.sidebar.number_input("EAD Multiplier (scale loan amounts)", value=1.0, step=0.1)
+# --- Helper Function for Dashboard Content ---
+def render_dashboard(df, page_title):
+    """
+    Renders the dashboard KPIs, charts, and tables based on the provided dataframe.
+    """
+    # ---------------- Header ----------------
+    st.title(page_title)
+    st.markdown("---")
 
-# ---------------- Data Upload ----------------
-st.subheader("📥 Upload Your Scored Loans (CSV)")
-st.caption("Required columns: `prob_default` (0-1), `loan_amnt` (numeric). Additional columns are welcome.")
-uploaded = st.file_uploader("Upload CSV", type=["csv"])
+    # ---------------- Sidebar Controls ----------------
+    with st.sidebar:
+        st.header("🔧 Controls")
+        threshold = st.slider("Probability Threshold (accept if PD ≤ threshold)", min_value=0.0, max_value=1.0, value=0.5, step=0.01)
+        lgd = st.slider("Loss Given Default (LGD)", 0.0, 1.0, 1.0, 0.05)
+        ead_multiplier = st.number_input("EAD Multiplier (scale loan amounts)", value=1.0, step=0.1)
 
-if uploaded is None:
-    st.info("Please upload a CSV file to begin the analysis.")
-else:
-    try:
-        df = pd.read_csv(uploaded)
-        st.success("File uploaded successfully!")
-    except Exception as e:
-        st.error(f"Error reading file: {e}")
-        st.stop()
-
-    # Ensure required columns exist
-    required_cols = ['prob_default', 'loan_amnt']
-    if not all(col in df.columns for col in required_cols):
-        st.error(f"The uploaded CSV must contain the following columns: {required_cols}. It currently has {list(df.columns)}.")
-        st.stop()
-
-    # ---------------- Main Dashboard Logic ----------------
+    # Apply controls to the dataframe
     df["loan_amnt"] = df["loan_amnt"] * ead_multiplier
     df["expected_loss"] = df["prob_default"] * lgd * df["loan_amnt"]
     df["accept"] = (df["prob_default"] <= threshold).astype(int)
@@ -53,7 +40,6 @@ else:
     # ---------------- KPIs ----------------
     st.markdown("### 📊 Key Performance Indicators")
     col1, col2, col3, col4 = st.columns(4)
-
     with col1:
         total_loans = len(df)
         st.metric(label="Total Loans", value=f"{total_loans:,.0f}")
@@ -73,15 +59,11 @@ else:
     # ---------------- Visualizations (Plotly) ----------------
     st.markdown("### 📈 Interactive Data Visualizations")
     col_chart1, col_chart2 = st.columns(2)
-
-    # Chart 1: Distribution of Probability of Default
     with col_chart1:
         fig1 = px.histogram(df, x="prob_default", nbins=50, title="Distribution of Probability of Default (PD)")
         fig1.add_vline(x=threshold, line_width=3, line_dash="dash", line_color="red", annotation_text=f'Threshold: {threshold:.2f}')
         fig1.update_layout(xaxis_title="Probability of Default", yaxis_title="Frequency")
         st.plotly_chart(fig1, use_container_width=True)
-
-    # Chart 2: Expected Loss by Acceptance
     with col_chart2:
         loss_by_bucket = df.groupby(df['accept'].map({1: 'Accepted', 0: 'Rejected'}))['expected_loss'].sum().reset_index()
         fig2 = px.bar(loss_by_bucket, x='index', y='expected_loss', title='Expected Loss by Acceptance Status')
@@ -101,7 +83,7 @@ else:
         expected_loss = accepted_df['expected_loss'].sum()
         strategy_data.append({'threshold': t, 'acceptance_rate': acceptance_rate, 'expected_loss': expected_loss})
     strategy_df = pd.DataFrame(strategy_data)
-
+    
     fig_strategy = go.Figure()
     fig_strategy.add_trace(go.Scatter(x=strategy_df['acceptance_rate'], y=strategy_df['expected_loss'], mode='lines', name='Strategy Curve'))
     fig_strategy.update_layout(
@@ -130,8 +112,7 @@ else:
     for t in sweep_table:
         acc_rate = (df["prob_default"] <= t).mean()
         acc_df = df[df["prob_default"] <= t]
-        # Calculate bad rate only for accepted loans
-        bad_rate_acc = (acc_df['prob_default'] > t).mean() if not acc_df.empty else 0.0
+        bad_rate_acc = (acc_df['prob_default'] > 0.5).mean() if not acc_df.empty else 0.0
         el_total = acc_df["expected_loss"].sum()
         rows.append({"Threshold": t, "Acceptance Rate": acc_rate, "Bad Rate (Accepted)": bad_rate_acc, "Expected Loss": el_total})
     table = pd.DataFrame(rows)
@@ -147,11 +128,9 @@ else:
     # ---------------- Segmented Analysis ----------------
     st.markdown("### 🔍 Segmented Analysis")
     segment_by = st.selectbox("Select a variable to segment by:", ['None'] + [col for col in df.columns if df[col].dtype == 'object'])
-
     if segment_by != 'None':
         fig_seg = px.box(df, x=segment_by, y="prob_default", title=f"Probability of Default Distribution by {segment_by}")
         st.plotly_chart(fig_seg, use_container_width=True)
-
         st.markdown("#### Key Metrics by Segment")
         agg_df = df.groupby(segment_by).agg(
             total_loans=('loan_amnt', 'count'),
@@ -164,3 +143,133 @@ else:
             "total_expected_loss": "${:,.0f}",
             "avg_expected_loss": "${:,.2f}"
         }))
+
+# --- Page Content ---
+if page == "Intro":
+    # --- Intro Page Logic ---
+    try:
+        image = Image.open('credit_risk_image.png')
+    except FileNotFoundError:
+        st.warning("Image 'credit_risk_image.png' not found. Using a placeholder instead.")
+        image = None
+
+    st.title("Welcome to the Credit Risk Analyzer")
+    st.markdown("---")
+
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        if image:
+            st.image(image, use_column_width=True)
+        else:
+            st.write("A placeholder for a relevant image would go here.")
+        st.info("Navigate using the sidebar on the left.")
+
+    with col2:
+        st.header("What is Credit Risk Analysis?")
+        st.write(
+            """
+            Credit risk analysis is the process of determining the probability of a borrower defaulting on their financial obligations. 
+            It's a critical function for banks and other financial institutions to manage their portfolios and ensure long-term profitability.
+            """
+        )
+        st.header("How This App Helps")
+        st.write(
+            """
+            This application provides a powerful and interactive dashboard to analyze and visualize credit risk data. 
+            You can explore pre-loaded sample data or upload your own dataset to assess loan portfolios, evaluate risk strategies, 
+            and gain insights into factors influencing credit defaults.
+            """
+        )
+        st.write(
+            """
+            ### Key Features:
+            * **Test Dashboard:** Explore a pre-loaded, cleaned dataset with various interactive charts.
+            * **Upload Your Data:** Analyze your own CSV file by mapping its columns to the required fields.
+            * **Interactive Controls:** Adjust key parameters like the Probability of Default (PD) threshold to see how it impacts acceptance rates and expected loss.
+            """
+        )
+
+    st.markdown("---")
+
+    st.markdown("### Getting Started")
+    st.markdown("1. Use the navigation menu on the left to select a page.")
+    st.markdown("2. Start with the **Test Dashboard** to familiarize yourself with the features.")
+    st.markdown("3. Go to the **Upload Your Data** page to perform a custom analysis.")
+
+elif page == "Main Dashboard":
+    # --- Main Dashboard Logic ---
+    try:
+        df = pd.read_csv("cr_loan_clean.csv")
+        df['prob_default'] = df['loan_status']
+        df['loan_amnt'] = df['loan_amnt']
+        render_dashboard(df.copy(), "Main Dashboard")
+    except FileNotFoundError:
+        st.error("Sample data file 'cr_loan_clean.csv' not found. Please make sure it's in the same directory as this script.")
+
+elif page == "Upload Your Data":
+    # --- Upload Your Data Page Logic ---
+    st.title("Upload Your Data")
+    st.markdown("---")
+    st.subheader("📥 Upload Your CSV File")
+    st.caption("The dashboard requires two key columns: one for **Loan Amount** and one for **Default Probability** (or a binary **Loan Status**).")
+    uploaded = st.file_uploader("Upload CSV", type=["csv"])
+
+    if uploaded is None:
+        st.info("Please upload a CSV file to begin the analysis.")
+    else:
+        try:
+            df = pd.read_csv(uploaded)
+            st.success("File uploaded successfully! Now, please select the columns for analysis.")
+            st.markdown("---")
+            st.markdown("### 🗺️ Map Your Columns")
+            col_mapping = st.columns(2)
+            with col_mapping[0]:
+                prob_col = st.selectbox("Select the 'Probability of Default' or 'Loan Status' column", options=[None] + list(df.columns))
+            with col_mapping[1]:
+                loan_col = st.selectbox("Select the 'Loan Amount' column", options=[None] + list(df.columns))
+
+            if prob_col is None or loan_col is None:
+                st.warning("Please select both a probability/status column and a loan amount column to proceed.")
+            else:
+                df['prob_default'] = df[prob_col]
+                df['loan_amnt'] = df[loan_col]
+                is_binary = not df['prob_default'].between(0, 1, inclusive='both').all()
+                if is_binary:
+                    st.warning("The selected 'Probability of Default' column does not appear to be a probability score. Assuming it is a binary loan status column.")
+                render_dashboard(df.copy(), "Uploaded Data Dashboard")
+        except Exception as e:
+            st.error(f"Error reading file: {e}")
+
+elif page == "About":
+    # --- About Page Logic ---
+    st.title("About this Project")
+    st.markdown("---")
+    st.write(
+        """
+        This Streamlit application was developed as a tool for performing quick and insightful credit risk analysis. 
+        It is designed to be a user-friendly and interactive platform for financial analysts, data scientists, and students 
+        to explore key concepts in credit risk management.
+        """
+    )
+    st.write(
+        """
+        The application is structured into several sections to provide a clean and logical workflow:
+        * **Intro:** A high-level overview of the project and its purpose.
+        * **Main Dashboard:** An interactive dashboard pre-loaded with sample data for immediate exploration.
+        * **Upload Your Data:** A flexible tool for analyzing your own credit data with smart column mapping.
+        """
+    )
+    st.header("Behind the Scenes")
+    st.markdown(
+        """
+        The application is built using **Python** and the **Streamlit** library. The visualizations are created with **Plotly**,
+        which enables the interactive charts you see on the dashboards. The underlying data manipulation is handled by **Pandas** and **NumPy**.
+        """
+    )
+    st.markdown(
+        """
+        This project demonstrates the power of these tools in creating powerful, accessible, and enterprise-grade data applications.
+        """
+    )
+    st.markdown("---")
+    st.markdown("Thank you for using this application!")
