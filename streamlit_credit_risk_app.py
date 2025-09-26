@@ -289,8 +289,7 @@ page = st.sidebar.radio("Go to", ["Intro", "Portfolio Analysis", "Upload Your Da
 if page == "Intro":
     st.title("Welcome to the Enterprise Credit Risk Dashboard")
     st.markdown("---")
-
-
+    
         st.header("What is Enterprise Credit Risk Management?")
         st.write(
             """
