@@ -12,9 +12,15 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- Sidebar Navigation ---
-st.sidebar.header("Navigation")
-page = st.sidebar.radio("Go to", ["Intro", "Main Dashboard", "Upload Your Data", "About"])
+# --- Helper Functions ---
+def format_currency(value):
+    """Formats a number into a readable currency string with M or B suffixes."""
+    if abs(value) >= 1e9:
+        return f"${value / 1e9:,.2f}B"
+    elif abs(value) >= 1e6:
+        return f"${value / 1e6:,.2f}M"
+    else:
+        return f"${value:,.0f}"
 
 # --- Helper Function for Dashboard Content ---
 def render_enterprise_dashboard(df, page_title):
@@ -33,12 +39,12 @@ def render_enterprise_dashboard(df, page_title):
         </style>
         <div class="title-divider"></div>
         <p style="font-size:1.1rem;">
-            Welcome to the Enterprise Credit Risk Dashboard. This tool provides a comprehensive, 
-            360-degree view of your loan portfolio, allowing you to manage risk, 
+            This dashboard provides a comprehensive, 360-degree view of your loan portfolio, allowing you to manage risk, 
             validate models, and make data-driven decisions.
         </p>
     """, unsafe_allow_html=True)
     
+    # Create a copy of the original dataframe before filtering
     df_original = df.copy()
 
     # ---------------- Sidebar Controls - Logical Sections ----------------
@@ -97,13 +103,13 @@ def render_enterprise_dashboard(df, page_title):
             st.metric(label="Acceptance Rate", value=f"{acceptance_rate:,.1f}%")
         with col3:
             total_loan_amount = df["loan_amnt"].sum()
-            st.metric(label="Total Loan Amount", value=f"${total_loan_amount:,.0f}")
+            st.metric(label="Total Loan Amount", value=format_currency(total_loan_amount))
         with col4:
             total_expected_loss = df["expected_loss"].sum()
-            st.metric(label="Total Expected Loss", value=f"${total_expected_loss:,.0f}")
+            st.metric(label="Total Expected Loss", value=format_currency(total_expected_loss))
         with col5:
             el_accepted = df[df['accept'] == 1]['expected_loss'].sum()
-            st.metric(label="EL (Accepted)", value=f"${el_accepted:,.0f}")
+            st.metric(label="EL (Accepted)", value=format_currency(el_accepted))
 
         st.markdown("---")
 
@@ -144,10 +150,12 @@ def render_enterprise_dashboard(df, page_title):
 
     with tab2:
         st.header("Model Validation & Backtesting")
-        
         st.markdown("This section provides a deeper look into the performance of the PD model.")
         
-        if 'true_label' in df.columns and len(df[df['true_label'].isin([0, 1])]) > 0:
+        # Ensure 'true_label' is correctly defined for the filtered data
+        df['prediction'] = (df['prob_default'] <= threshold).astype(int)
+        
+        if 'true_label' in df.columns and len(df[df['true_label'].isin([0, 1])]) > 0 and len(df) > 0:
             y_true = df['true_label'].astype(int)
             y_pred = df['prediction'].astype(int)
 
@@ -161,11 +169,15 @@ def render_enterprise_dashboard(df, page_title):
 
             col_met1, col_met2, col_met3 = st.columns(3)
             with col_met1:
-                st.metric("Accuracy", f"{((tp + tn) / (tp + tn + fp + fn)):.2%}")
+                # This metric now correctly updates based on the filtered data and threshold
+                accuracy = (tp + tn) / (tp + tn + fp + fn) if (tp + tn + fp + fn) > 0 else 0
+                st.metric("Accuracy", f"{accuracy:.2%}")
             with col_met2:
-                st.metric("Precision", f"{tp / (tp + fp):.2%}" if (tp + fp) > 0 else "N/A")
+                precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+                st.metric("Precision", f"{precision:.2%}")
             with col_met3:
-                st.metric("Recall", f"{tp / (tp + fn):.2%}" if (tp + fn) > 0 else "N/A")
+                recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+                st.metric("Recall", f"{recall:.2%}")
 
             st.markdown("---")
             
@@ -189,7 +201,7 @@ def render_enterprise_dashboard(df, page_title):
                 fig_pr.update_layout(xaxis_title='Recall', yaxis_title='Precision', title='Precision-Recall Curve')
                 st.plotly_chart(fig_pr, use_container_width=True)
         else:
-            st.warning("No ground truth labels (0 or 1) found in the 'loan_status' column for model validation.")
+            st.warning("No ground truth labels (0 or 1) or no data found in the 'loan_status' column for model validation.")
 
     with tab3:
         st.header("Deep Dive Analysis")
@@ -217,7 +229,8 @@ def render_enterprise_dashboard(df, page_title):
                     st.plotly_chart(fig, use_container_width=True)
             elif plot_type == 'Bar Chart':
                 if y_axis != '--Select a column--':
-                    fig = px.bar(df.groupby(x_axis)[y_axis].sum().reset_index(), x=x_axis, y=y_axis, color=color_by if color_by != 'None' else None, title=f"Total {y_axis} by {x_axis}")
+                    agg_df = df.groupby(x_axis)[y_axis].sum().reset_index()
+                    fig = px.bar(agg_df, x=x_axis, y=y_axis, color=color_by if color_by != 'None' else None, title=f"Total {y_axis} by {x_axis}")
                     st.plotly_chart(fig, use_container_width=True)
 
     with tab4:
@@ -225,17 +238,33 @@ def render_enterprise_dashboard(df, page_title):
         st.markdown("This section provides a summary of the key findings from the analysis.")
         
         st.subheader("Executive Summary")
+        
+        total_expected_loss = df["expected_loss"].sum()
+        el_accepted = df[df['accept'] == 1]['expected_loss'].sum()
+        total_loans = len(df)
+        accepted_loans = df["accept"].sum()
+        acceptance_rate = accepted_loans / total_loans * 100 if total_loans > 0 else 0
+
         st.markdown(f"""
             Based on the selected portfolio and model parameters, the current PD threshold of **{threshold:.2f}** leads to an acceptance rate of **{acceptance_rate:,.1f}%**. This strategy results in a 
-            total expected loss of **${total_expected_loss:,.0f}**, with **${el_accepted:,.0f}** of that loss 
+            total expected loss of **{format_currency(total_expected_loss)}**, with **{format_currency(el_accepted)}** of that loss 
             coming from the accepted loans.
         """)
 
         st.subheader("Model Performance Summary")
         if 'true_label' in df.columns and len(df[df['true_label'].isin([0, 1])]) > 0:
+            y_true = df['true_label'].astype(int)
+            y_pred = df['prediction'].astype(int)
+            cm = confusion_matrix(y_true, y_pred, labels=[1, 0])
+            tn, fp, fn, tp = cm.ravel()
+            accuracy = (tp + tn) / (tp + tn + fp + fn) if (tp + tn + fp + fn) > 0 else 0
+            
+            fpr, tpr, _ = roc_curve(df['true_label'], df['prob_default'])
+            roc_auc = auc(fpr, tpr)
+            
             st.markdown(f"""
                 The PD model demonstrates strong performance with a key metric analysis:
-                - **Accuracy:** {((tp + tn) / (tp + tn + fp + fn)):.2%}
+                - **Accuracy:** {accuracy:.2%}
                 - **Precision:** {tp / (tp + fp):.2%}
                 - **Recall:** {tp / (tp + fn):.2%}
                 
@@ -254,6 +283,9 @@ def render_enterprise_dashboard(df, page_title):
         """)
 
 # --- Main Page Content ---
+st.sidebar.header("Navigation")
+page = st.sidebar.radio("Go to", ["Intro", "Portfolio Analysis", "Upload Your Data", "About"])
+
 if page == "Intro":
     st.title("Welcome to the Enterprise Credit Risk Dashboard")
     st.markdown("---")
@@ -291,12 +323,12 @@ if page == "Intro":
             """
         )
 
-elif page == "Main Dashboard":
+elif page == "Portfolio Analysis":
     try:
         df = pd.read_csv("cr_loan_clean.csv")
         df['prob_default'] = df['loan_status']
         df['loan_amnt'] = df['loan_amnt']
-        render_enterprise_dashboard(df.copy(), "Main Dashboard")
+        render_enterprise_dashboard(df.copy(), "Portfolio Analysis")
     except FileNotFoundError:
         st.error("Sample data file 'cr_loan_clean.csv' not found. Please make sure it's in the same directory as this script.")
 
