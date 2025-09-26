@@ -290,9 +290,7 @@ if page == "Intro":
     st.title("Welcome to the Enterprise Credit Risk Dashboard")
     st.markdown("---")
 
-    col1, col2 = st.columns([1, 2])
 
-    with col2:
         st.header("What is Enterprise Credit Risk Management?")
         st.write(
             """
@@ -300,7 +298,7 @@ if page == "Intro":
             advanced models, and sophisticated decision-making tools to manage a diverse loan portfolio at scale.
             """
         )
-    with col2:
+  
         st.header("How This App Helps")
         st.write(
             """
@@ -310,7 +308,7 @@ if page == "Intro":
             and see how the analysis works before you begin a custom analysis.
             """
         )
-    with col2:
+
         st.header("Purpose of Portfolio Analysis")
         st.write(
             """
