@@ -289,46 +289,47 @@ page = st.sidebar.radio("Go to", ["Intro", "Portfolio Analysis", "Upload Your Da
 if page == "Intro":
     st.title("Welcome to the Enterprise Credit Risk Dashboard")
     st.markdown("---")
-    
-        st.header("What is Enterprise Credit Risk Management?")
-        st.write(
-            """
-            At an enterprise level, credit risk management moves beyond simple analysis. It's about a holistic framework that integrates data, 
-            advanced models, and sophisticated decision-making tools to manage a diverse loan portfolio at scale.
-            """
-        )
-  
-        st.header("How This App Helps")
-        st.write(
-            """
-            This application provides a powerful and interactive dashboard to analyze and visualize credit risk data. 
-            It is designed to give you an immediate, hands-on experience without the need to upload your own CSV file. 
-            This page allows you to test the interactive controls, understand the various charts and KPIs, 
-            and see how the analysis works before you begin a custom analysis.
-            """
-        )
 
-        st.header("Purpose of Portfolio Analysis")
-        st.write(
-            """
-            Beyond assessing individual loans, **portfolio analysis** is crucial for understanding the overall risk exposure of a group of loans. It allows a business to evaluate the collective performance and risk profile of its entire loan portfolio, rather than just individual borrowers. This analysis helps in:
-            * **Diversification:** Identifying how different types of loans balance each other out to mitigate risk.
-            * **Stress Testing:** Simulating economic downturns or other scenarios to see how the portfolio would perform under pressure.
-            * **Capital Allocation:** Determining the appropriate amount of capital to hold against potential losses across the portfolio.
-            st.markdown("* **Strategy Optimization:** Using insights to adjust lending criteria and improve overall business strategy.
-            By shifting focus from a single loan to the entire portfolio, businesses can make more informed, strategic decisions to manage risk and maximize profitability.
-            """
-        )
-        st.markdown("---")
-        st.subheader("Key Features:")
-        st.markdown(
-            """
-            * **Portfolio Management:** A comprehensive overview of your loan portfolio with key financial metrics.
-            * **Model Validation:** Tools to validate the performance of your Probability of Default (PD) model.
-            * **Deep Dive Analysis:** A flexible section for custom visualizations and segmented analysis.
-            * **Custom Data Upload:** The ability to upload your own scored loan data for analysis.
-            """
-        )
+    st.header("What is Enterprise Credit Risk Management?")
+    st.write(
+        """
+        At an enterprise level, credit risk management moves beyond simple analysis. It's about a holistic framework that integrates data,
+        advanced models, and sophisticated decision-making tools to manage a diverse loan portfolio at scale.
+        """
+    )
+
+    st.header("How This App Helps")
+    st.write(
+        """
+        This application provides a powerful and interactive dashboard to analyze and visualize credit risk data.
+        It is designed to give you an immediate, hands-on experience without the need to upload your own CSV file.
+        This page allows you to test the interactive controls, understand the various charts and KPIs,
+        and see how the analysis works before you begin a custom analysis.
+        """
+    )
+
+    st.header("Purpose of Portfolio Analysis")
+    st.write(
+        """
+        Beyond assessing individual loans, **portfolio analysis** is crucial for understanding the overall risk exposure of a group of loans. It allows a business to evaluate the collective performance and risk profile of its entire loan portfolio, rather than just individual borrowers. This analysis helps in:
+        * **Diversification:** Identifying how different types of loans balance each other out to mitigate risk.
+        * **Stress Testing:** Simulating economic downturns or other scenarios to see how the portfolio would perform under pressure.
+        * **Capital Allocation:** Determining the appropriate amount of capital to hold against potential losses across the portfolio.
+        * **Strategy Optimization:** Using insights to adjust lending criteria and improve overall business strategy.
+
+        By shifting focus from a single loan to the entire portfolio, businesses can make more informed, strategic decisions to manage risk and maximize profitability.
+        """
+    )
+    st.markdown("---")
+    st.subheader("Key Features:")
+    st.markdown(
+        """
+        * **Portfolio Management:** A comprehensive overview of your loan portfolio with key financial metrics.
+        * **Model Validation:** Tools to validate the performance of your Probability of Default (PD) model.
+        * **Deep Dive Analysis:** A flexible section for custom visualizations and segmented analysis.
+        * **Custom Data Upload:** The ability to upload your own scored loan data for analysis.
+        """
+    )
 
 elif page == "Portfolio Analysis":
     try:
