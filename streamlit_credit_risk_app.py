@@ -290,12 +290,9 @@ if page == "Intro":
     st.title("Welcome to the Enterprise Credit Risk Dashboard")
     st.markdown("---")
 
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        st.image("https://placehold.co/400x300/E0E0E0/white?text=Enterprise+Analytics", use_column_width=True)
-        st.info("Navigate using the sidebar on the left.")
+    col1, col2, col3 = st.columns([1, 2,3])
 
-    with col2:
+    with col1:
         st.header("What is Enterprise Credit Risk Management?")
         st.write(
             """
@@ -303,6 +300,7 @@ if page == "Intro":
             advanced models, and sophisticated decision-making tools to manage a diverse loan portfolio at scale.
             """
         )
+    with col2:
         st.header("How This App Helps")
         st.write(
             """
@@ -310,6 +308,18 @@ if page == "Intro":
             It is designed to give you an immediate, hands-on experience without the need to upload your own CSV file. 
             This page allows you to test the interactive controls, understand the various charts and KPIs, 
             and see how the analysis works before you begin a custom analysis.
+            """
+        )
+    with col3:
+        st.header("Purpose of Portfolio Analysis")
+        st.write(
+            """
+            Beyond assessing individual loans, **portfolio analysis** is crucial for understanding the overall risk exposure of a group of loans. It allows a business to evaluate the collective performance and risk profile of its entire loan portfolio, rather than just individual borrowers. This analysis helps in:
+            * **Diversification:** Identifying how different types of loans balance each other out to mitigate risk.
+            * **Stress Testing:** Simulating economic downturns or other scenarios to see how the portfolio would perform under pressure.
+            * **Capital Allocation:** Determining the appropriate amount of capital to hold against potential losses across the portfolio.
+            st.markdown("* **Strategy Optimization:** Using insights to adjust lending criteria and improve overall business strategy.
+            By shifting focus from a single loan to the entire portfolio, businesses can make more informed, strategic decisions to manage risk and maximize profitability.
             """
         )
         st.markdown("---")
